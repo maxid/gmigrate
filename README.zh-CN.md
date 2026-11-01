@@ -86,7 +86,9 @@ gmigrate -url 'postgres://...' -locations db/migrations repair
 gmigrate -url 'postgres://...' -clean-disabled=false clean
 ```
 
-支持 `-placeholder key=value`（可重复）、`-table`、`-installed-by`、`-out-of-order`、`-ignore-missing`、`-baseline-on-migrate`。
+支持 `-placeholder key=value`（可重复）、`-table`、`-schema`、`-installed-by`、`-out-of-order`、`-ignore-missing`、`-baseline-on-migrate`。
+
+`-schema` 指定默认 schema/database。PostgreSQL 以 `search_path` 执行迁移；MySQL 使用 `USE`；历史表同样限定在该 schema。
 
 CLI 的 Go 迁移来自链接进二进制的 `gmigrate.Register`；产品 CLI 可 blank-import 自己的迁移包。
 
@@ -105,7 +107,7 @@ MySQL 使用 `parseTime=true`；多语句文件加 `multiStatements=true`。
 
 - 历史列：`installed_rank`、`version`、`description`、`type`、`script`、`checksum`、`installed_by`、`installed_on`、`execution_time`、`success`。
 - Checksum：Flyway 的行级 CRC32。
-- 尚未支持：Undo、cherry-pick、dry-run、完整多 schema/search_path、JVM/JDBC 迁移。
+- 已支持默认 schema/search_path。完整的有序多 schema 列表、Undo、cherry-pick、dry-run 尚未实现。
 - ClickHouse/TDengine 在引擎不能更新行时使用 append-only 历史；repeatable 以最大 `installed_rank` 为准。
 
 ## 开发

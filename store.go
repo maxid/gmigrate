@@ -58,6 +58,7 @@ type Option func(*storeConfig)
 type storeConfig struct {
 	table       string
 	installedBy string
+	schema      string
 }
 
 func newStoreConfig(opts ...Option) storeConfig {
@@ -69,6 +70,13 @@ func newStoreConfig(opts ...Option) storeConfig {
 		cfg.installedBy = "gmigrate"
 	}
 	return cfg
+}
+
+// WithSchema sets the default schema/database. The history table is qualified
+// with it, and migrations run with it as the current schema (PostgreSQL
+// search_path, MySQL USE).
+func WithSchema(name string) Option {
+	return func(c *storeConfig) { c.schema = name }
 }
 
 // WithTable overrides the history table name.
@@ -125,7 +133,11 @@ func newStore(db *sql.DB, dialect Dialect, opts ...Option) (*sqlStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
-	return &sqlStore{db: db, dialect: dialect, table: cfg.table, installedBy: cfg.installedBy}, nil
+	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
+		_ = db.Close()
+		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	}
+	return &sqlStore{db: db, dialect: dialect, table: cfg.table, installedBy: cfg.installedBy, schema: cfg.schema}, nil
 }
 
 var identifierRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -135,6 +147,24 @@ type sqlStore struct {
 	dialect     Dialect
 	table       string
 	installedBy string
+	schema      string
+}
+
+func (s *sqlStore) tableName() string {
+	if s.schema == "" {
+		return s.quote(s.table)
+	}
+	return s.quote(s.schema) + "." + s.quote(s.table)
+}
+
+func (s *sqlStore) schemaName() string {
+	if s.schema != "" {
+		return s.schema
+	}
+	if s.dialect == DialectMySQL {
+		return "DATABASE()"
+	}
+	return "current_schema()"
 }
 
 func (s *sqlStore) Close() error { return s.db.Close() }
@@ -154,6 +184,17 @@ func (s *sqlStore) placeholder(n int) string {
 }
 
 func (s *sqlStore) Ensure(ctx context.Context) error {
+	if s.schema != "" {
+		var create string
+		if s.dialect == DialectMySQL {
+			create = `CREATE DATABASE IF NOT EXISTS ` + s.quote(s.schema)
+		} else {
+			create = `CREATE SCHEMA IF NOT EXISTS ` + s.quote(s.schema)
+		}
+		if _, err := s.db.ExecContext(ctx, create); err != nil {
+			return fmt.Errorf("migrate: ensure schema: %w", err)
+		}
+	}
 	for _, statement := range s.createStatements() {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate: ensure history: %w", err)
@@ -163,7 +204,7 @@ func (s *sqlStore) Ensure(ctx context.Context) error {
 }
 
 func (s *sqlStore) createStatements() []string {
-	table := s.quote(s.table)
+	table := s.tableName()
 	if s.dialect == DialectMySQL {
 		return []string{`CREATE TABLE IF NOT EXISTS ` + table + ` (
   installed_rank INT NOT NULL,
@@ -199,7 +240,7 @@ func (s *sqlStore) createStatements() []string {
 }
 
 func (s *sqlStore) List(ctx context.Context) ([]History, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.quote(s.table)+` ORDER BY installed_rank`)
+	rows, err := s.db.QueryContext(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.tableName()+` ORDER BY installed_rank`)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +282,7 @@ func (s *sqlStore) nextRank(ctx context.Context, queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) (int, error) {
 	var rank int
-	err := queryer.QueryRowContext(ctx, `SELECT COALESCE(MAX(installed_rank), 0) + 1 FROM `+s.quote(s.table)).Scan(&rank)
+	err := queryer.QueryRowContext(ctx, `SELECT COALESCE(MAX(installed_rank), 0) + 1 FROM `+s.tableName()).Scan(&rank)
 	return rank, err
 }
 
@@ -249,6 +290,10 @@ func (s *sqlStore) Apply(ctx context.Context, m Migration) error {
 	started := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return err
+	}
+	if err := s.useSchema(ctx, tx); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
 	if m.Go != nil {
@@ -262,7 +307,7 @@ func (s *sqlStore) Apply(ctx context.Context, m Migration) error {
 	}
 	execution := int(time.Since(started).Milliseconds())
 	if m.Repeatable {
-		update := `UPDATE ` + s.quote(s.table) + ` SET description = ` + s.placeholder(1) + `, type = ` + s.placeholder(2) + `, checksum = ` + s.placeholder(3) + `, installed_by = ` + s.placeholder(4) + `, installed_on = CURRENT_TIMESTAMP, execution_time = ` + s.placeholder(5) + `, success = TRUE WHERE script = ` + s.placeholder(6) + ` AND version IS NULL`
+		update := `UPDATE ` + s.tableName() + ` SET description = ` + s.placeholder(1) + `, type = ` + s.placeholder(2) + `, checksum = ` + s.placeholder(3) + `, installed_by = ` + s.placeholder(4) + `, installed_on = CURRENT_TIMESTAMP, execution_time = ` + s.placeholder(5) + `, success = TRUE WHERE script = ` + s.placeholder(6) + ` AND version IS NULL`
 		result, err := tx.ExecContext(ctx, update, m.Description, m.migrationType(), int32(m.Checksum), s.installedBy, execution, m.Script)
 		if err != nil {
 			_ = tx.Rollback()
@@ -277,7 +322,7 @@ func (s *sqlStore) Apply(ctx context.Context, m Migration) error {
 		_ = tx.Rollback()
 		return err
 	}
-	query := `INSERT INTO ` + s.quote(s.table) + ` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (` +
+	query := `INSERT INTO ` + s.tableName() + ` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (` +
 		s.placeholder(1) + `, ` + s.placeholder(2) + `, ` + s.placeholder(3) + `, ` + s.placeholder(4) + `, ` + s.placeholder(5) + `, ` + s.placeholder(6) + `, ` + s.placeholder(7) + `, ` + s.placeholder(8) + `, TRUE)`
 	if _, err := tx.ExecContext(ctx, query, rank, m.Version, m.Description, m.migrationType(), m.Script, int32(m.Checksum), s.installedBy, execution); err != nil {
 		_ = tx.Rollback()
@@ -291,24 +336,46 @@ func (s *sqlStore) Record(ctx context.Context, m Migration) error {
 	if err != nil {
 		return err
 	}
-	query := `INSERT INTO ` + s.quote(s.table) + ` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (` +
+	query := `INSERT INTO ` + s.tableName() + ` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (` +
 		s.placeholder(1) + `, ` + s.placeholder(2) + `, ` + s.placeholder(3) + `, ` + s.placeholder(4) + `, ` + s.placeholder(5) + `, NULL, ` + s.placeholder(6) + `, 0, TRUE)`
 	_, err = s.db.ExecContext(ctx, query, rank, m.Version, m.Description, m.migrationType(), m.Script, s.installedBy)
 	return err
 }
 
 func (s *sqlStore) Exec(ctx context.Context, sql string) error {
-	_, err := s.db.ExecContext(ctx, sql)
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := s.useSchema(ctx, conn); err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, sql)
+	return err
+}
+
+func (s *sqlStore) useSchema(ctx context.Context, conn interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}) error {
+	if s.schema == "" {
+		return nil
+	}
+	if s.dialect == DialectMySQL {
+		_, err := conn.ExecContext(ctx, `USE `+s.quote(s.schema))
+		return err
+	}
+	_, err := conn.ExecContext(ctx, `SET search_path TO `+s.quote(s.schema))
 	return err
 }
 
 func (s *sqlStore) DeleteFailed(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM `+s.quote(s.table)+` WHERE success = FALSE`)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM `+s.tableName()+` WHERE success = FALSE`)
 	return err
 }
 
 func (s *sqlStore) UpdateChecksum(ctx context.Context, script string, checksum int32) error {
-	query := `UPDATE ` + s.quote(s.table) + ` SET checksum = ` + s.placeholder(1) + ` WHERE script = ` + s.placeholder(2)
+	query := `UPDATE ` + s.tableName() + ` SET checksum = ` + s.placeholder(1) + ` WHERE script = ` + s.placeholder(2)
 	_, err := s.db.ExecContext(ctx, query, checksum, script)
 	return err
 }
@@ -320,7 +387,20 @@ func (s *sqlStore) Clean(ctx context.Context) error {
 		query = `SELECT tablename FROM pg_tables WHERE schemaname = current_schema()`
 		dropSuffix = " CASCADE"
 	}
-	rows, err := s.db.QueryContext(ctx, query)
+	if s.schema != "" {
+		if s.dialect == DialectMySQL {
+			query = `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'`
+		} else {
+			query = `SELECT tablename FROM pg_tables WHERE schemaname = $1`
+		}
+	}
+	var rows *sql.Rows
+	var err error
+	if s.schema != "" {
+		rows, err = s.db.QueryContext(ctx, query, s.schema)
+	} else {
+		rows, err = s.db.QueryContext(ctx, query)
+	}
 	if err != nil {
 		return err
 	}
@@ -340,7 +420,11 @@ func (s *sqlStore) Clean(ctx context.Context) error {
 		return err
 	}
 	for _, name := range names {
-		if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+s.quote(name)+dropSuffix); err != nil {
+		qualified := s.quote(name)
+		if s.schema != "" {
+			qualified = s.quote(s.schema) + "." + qualified
+		}
+		if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+qualified+dropSuffix); err != nil {
 			return err
 		}
 	}

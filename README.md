@@ -86,7 +86,9 @@ gmigrate -url 'postgres://...' -locations db/migrations repair
 gmigrate -url 'postgres://...' -clean-disabled=false clean
 ```
 
-Use `-placeholder key=value` (repeatable), `-table`, `-installed-by`, `-out-of-order`, `-ignore-missing`, `-baseline-on-migrate`.
+Use `-placeholder key=value` (repeatable), `-table`, `-schema`, `-installed-by`, `-out-of-order`, `-ignore-missing`, `-baseline-on-migrate`.
+
+`-schema` selects the default schema/database. PostgreSQL runs migrations with `search_path` set to it; MySQL uses `USE`. The history table is qualified with the same schema.
 
 The CLI's Go migrations come from `gmigrate.Register` in packages linked into the binary; a product CLI can blank-import its migration package.
 
@@ -105,7 +107,7 @@ For MySQL use `parseTime=true` and `multiStatements=true` when a migration file 
 
 - History columns: `installed_rank`, `version`, `description`, `type`, `script`, `checksum`, `installed_by`, `installed_on`, `execution_time`, `success`.
 - Checksum: Flyway's CRC32 over lines without line endings.
-- Not yet: Undo migrations, cherry-pick, dry-run, full multi-schema/search_path semantics, JVM/JDBC migrations.
+- Default schema/search_path is supported. A full ordered multi-schema list, Undo, cherry-pick and dry-run are not yet implemented.
 - ClickHouse/TDengine history is append-only where the engine cannot update rows; the latest `installed_rank` wins for repeatable migrations.
 
 ## Development

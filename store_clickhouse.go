@@ -18,6 +18,14 @@ type ClickHouseStore struct {
 	db          *sql.DB
 	table       string
 	installedBy string
+	schema      string
+}
+
+func (s *ClickHouseStore) tableName() string {
+	if s.schema == "" {
+		return s.table
+	}
+	return s.schema + "." + s.table
 }
 
 // OpenClickHouse opens a ClickHouse history store.
@@ -29,17 +37,25 @@ func OpenClickHouse(dsn string, opts ...Option) (Store, error) {
 	if !identifierRE.MatchString(cfg.table) {
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
+	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
+		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	}
 	db, err := sql.Open("clickhouse", dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &ClickHouseStore{db: db, table: cfg.table, installedBy: cfg.installedBy}, nil
+	return &ClickHouseStore{db: db, table: cfg.table, installedBy: cfg.installedBy, schema: cfg.schema}, nil
 }
 
 func (s *ClickHouseStore) Close() error { return s.db.Close() }
 
 func (s *ClickHouseStore) Ensure(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+s.table+` (
+	if s.schema != "" {
+		if _, err := s.db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+s.schema); err != nil {
+			return err
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+s.tableName()+` (
   installed_rank Int32,
   version Nullable(String),
   description String,
@@ -55,7 +71,7 @@ func (s *ClickHouseStore) Ensure(ctx context.Context) error {
 }
 
 func (s *ClickHouseStore) List(ctx context.Context) ([]History, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.table+` ORDER BY installed_rank`)
+	rows, err := s.db.QueryContext(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.tableName()+` ORDER BY installed_rank`)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +98,7 @@ func (s *ClickHouseStore) List(ctx context.Context) ([]History, error) {
 
 func (s *ClickHouseStore) nextRank(ctx context.Context) (int, error) {
 	var rank int
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(installed_rank), 0) + 1 FROM `+s.table).Scan(&rank)
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(installed_rank), 0) + 1 FROM `+s.tableName()).Scan(&rank)
 	return rank, err
 }
 
@@ -99,7 +115,7 @@ func (s *ClickHouseStore) Apply(ctx context.Context, m Migration) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO `+s.table+` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+	_, err = s.db.ExecContext(ctx, `INSERT INTO `+s.tableName()+` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
 		rank, nullableString(m.Version), m.Description, m.migrationType(), m.Script, m.Checksum, s.installedBy, int(time.Since(started).Milliseconds()))
 	return err
 }
@@ -109,7 +125,7 @@ func (s *ClickHouseStore) Record(ctx context.Context, m Migration) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO `+s.table+` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (?, ?, ?, ?, ?, NULL, ?, 0, TRUE)`,
+	_, err = s.db.ExecContext(ctx, `INSERT INTO `+s.tableName()+` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (?, ?, ?, ?, ?, NULL, ?, 0, TRUE)`,
 		rank, nullableString(m.Version), m.Description, m.migrationType(), m.Script, s.installedBy)
 	return err
 }
@@ -120,17 +136,17 @@ func (s *ClickHouseStore) Exec(ctx context.Context, sql string) error {
 }
 
 func (s *ClickHouseStore) DeleteFailed(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.table+` DELETE WHERE success = FALSE`)
+	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.tableName()+` DELETE WHERE success = FALSE`)
 	return err
 }
 
 func (s *ClickHouseStore) UpdateChecksum(ctx context.Context, script string, checksum int32) error {
-	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.table+` UPDATE checksum = ? WHERE script = ?`, checksum, script)
+	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.tableName()+` UPDATE checksum = ? WHERE script = ?`, checksum, script)
 	return err
 }
 
 func (s *ClickHouseStore) Clean(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+s.table)
+	_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+s.tableName())
 	return err
 }
 

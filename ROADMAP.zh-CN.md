@@ -9,7 +9,8 @@
 - [x] validate / baseline / repair / info / clean
 - [x] ClickHouse 与 TDengine store
 - [x] `gmigrate` CLI
-- [ ] 多 schema / search_path 语义
+- [x] 默认 schema / PostgreSQL search_path / MySQL USE
+- [ ] 有序多 schema 列表
 - [ ] Undo 与 dry-run
 - [ ] 真实数据库集成矩阵
 - [ ] v1.0 API 稳定化

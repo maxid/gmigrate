@@ -7,7 +7,8 @@
 - [x] validate / baseline / repair / info / clean
 - [x] ClickHouse and TDengine stores
 - [x] `gmigrate` CLI
-- [ ] Multi-schema / search_path semantics
+- [x] Default schema / PostgreSQL search_path / MySQL USE
+- [ ] Ordered multi-schema list
 - [ ] Undo migrations and dry-run
 - [ ] Integration matrix against real databases
 - [ ] v1.0 API stabilization

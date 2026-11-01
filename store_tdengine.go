@@ -23,7 +23,10 @@ type TDengineStore struct {
 	client  *http.Client
 	table   string
 	by      string
+	schema  string
 }
+
+func (s *TDengineStore) tableName() string { return s.table }
 
 // OpenTDengine parses a DSN of the form:
 //
@@ -37,12 +40,19 @@ func OpenTDengine(dsn string, opts ...Option) (Store, error) {
 	if !identifierRE.MatchString(cfg.table) {
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
+	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
+		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	}
 	s := &TDengineStore{
 		baseURL: u.Scheme + "://" + u.Host,
 		db:      strings.Trim(u.Path, "/"),
 		client:  &http.Client{Timeout: 15 * time.Second},
 		table:   cfg.table,
 		by:      cfg.installedBy,
+		schema:  cfg.schema,
+	}
+	if s.schema != "" {
+		s.db = s.schema
 	}
 	if u.User != nil {
 		s.user = u.User.Username()
@@ -54,7 +64,7 @@ func OpenTDengine(dsn string, opts ...Option) (Store, error) {
 func (s *TDengineStore) Close() error { return nil }
 
 func (s *TDengineStore) Ensure(ctx context.Context) error {
-	_, err := s.exec(ctx, `CREATE TABLE IF NOT EXISTS `+s.table+` (
+	_, err := s.exec(ctx, `CREATE TABLE IF NOT EXISTS `+s.tableName()+` (
   ts          TIMESTAMP,
   installed_rank INT,
   version     NCHAR(64),
@@ -71,7 +81,7 @@ func (s *TDengineStore) Ensure(ctx context.Context) error {
 }
 
 func (s *TDengineStore) List(ctx context.Context) ([]History, error) {
-	resp, err := s.exec(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.table+` ORDER BY installed_rank`)
+	resp, err := s.exec(ctx, `SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success FROM `+s.tableName()+` ORDER BY installed_rank`)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +115,7 @@ func (s *TDengineStore) List(ctx context.Context) ([]History, error) {
 }
 
 func (s *TDengineStore) nextRank(ctx context.Context) (int, error) {
-	resp, err := s.exec(ctx, `SELECT MAX(installed_rank) FROM `+s.table)
+	resp, err := s.exec(ctx, `SELECT MAX(installed_rank) FROM `+s.tableName())
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +145,7 @@ func (s *TDengineStore) Apply(ctx context.Context, m Migration) error {
 		checksum = strconv.FormatInt(int64(m.Checksum), 10)
 	}
 	stmt := fmt.Sprintf(`INSERT INTO %s (ts, installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success) VALUES (NOW, %d, %s, %s, %s, %s, %s, %s, %s, %d, 'true')`,
-		s.table, rank, sqlString(m.Version), sqlString(m.Description), sqlString(m.migrationType()), sqlString(m.Script), sqlString(checksum), sqlString(s.by), sqlString(time.Now().UTC().Format(time.RFC3339)), int(time.Since(started).Milliseconds()))
+		s.tableName(), rank, sqlString(m.Version), sqlString(m.Description), sqlString(m.migrationType()), sqlString(m.Script), sqlString(checksum), sqlString(s.by), sqlString(time.Now().UTC().Format(time.RFC3339)), int(time.Since(started).Milliseconds()))
 	_, err = s.exec(ctx, stmt)
 	return err
 }
@@ -146,7 +156,7 @@ func (s *TDengineStore) Record(ctx context.Context, m Migration) error {
 		return err
 	}
 	stmt := fmt.Sprintf(`INSERT INTO %s (ts, installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success) VALUES (NOW, %d, %s, %s, %s, %s, NULL, %s, %s, 0, 'true')`,
-		s.table, rank, sqlString(m.Version), sqlString(m.Description), sqlString(m.migrationType()), sqlString(m.Script), sqlString(s.by), sqlString(time.Now().UTC().Format(time.RFC3339)))
+		s.tableName(), rank, sqlString(m.Version), sqlString(m.Description), sqlString(m.migrationType()), sqlString(m.Script), sqlString(s.by), sqlString(time.Now().UTC().Format(time.RFC3339)))
 	_, err = s.exec(ctx, stmt)
 	return err
 }
@@ -169,7 +179,7 @@ func (s *TDengineStore) UpdateChecksum(context.Context, string, int32) error {
 }
 
 func (s *TDengineStore) Clean(ctx context.Context) error {
-	_, err := s.exec(ctx, `DROP TABLE IF EXISTS `+s.table)
+	_, err := s.exec(ctx, `DROP TABLE IF EXISTS `+s.tableName())
 	return err
 }
 
