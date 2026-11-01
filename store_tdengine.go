@@ -208,7 +208,9 @@ type tdResponse struct {
 func (s *TDengineStore) exec(ctx context.Context, statement string) (tdResponse, error) {
 	endpoint := s.baseURL + "/rest/sql"
 	if s.db != "" {
-		endpoint += "?db=" + url.QueryEscape(s.db)
+		// TDengine 3.4 serves the database as a path segment; older servers
+		// accepted ?db=, but the path form is the current REST contract.
+		endpoint += "/" + url.PathEscape(s.db)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(statement))
 	if err != nil {

@@ -9,3 +9,4 @@ All notable changes to this project will be documented in this file.
   placeholders, callbacks, validate/baseline/repair/info/clean, MySQL,
   PostgreSQL, ClickHouse and TDengine stores, and the `gmigrate` CLI.
 - Default/ordered schema support, dry-run, Undo (`U` files and Go `Down`) and cherry-pick.
+- Testcontainers integration suite for MySQL, PostgreSQL, ClickHouse and TDengine.

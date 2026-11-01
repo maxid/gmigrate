@@ -120,6 +120,12 @@ For MySQL use `parseTime=true` and `multiStatements=true` when a migration file 
 ```bash
 go test ./...
 go build ./cmd/gmigrate
+
+# Real databases via testcontainers (Docker required)
+go test -tags=integration ./...
 ```
+
+The integration suite uses `mysql:8.4.7`, `postgres:15-alpine`,
+`clickhouse/clickhouse-server:24.8-alpine` and `tdengine/tsdb:3.4.0.9`.
 
 MIT. See [LICENSE](LICENSE).

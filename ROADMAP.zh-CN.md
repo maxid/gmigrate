@@ -14,5 +14,5 @@
 - [x] 清理全部配置 schema
 - [x] Dry-run 计划输出
 - [x] Undo（U 文件与 Go Down）
-- [ ] 真实数据库集成矩阵
+- [x] 真实数据库集成矩阵（testcontainers）
 - [ ] v1.0 API 稳定化

@@ -12,5 +12,5 @@
 - [x] Clean all configured schemas
 - [x] Dry-run plan output
 - [x] Undo migrations (U files and Go Down)
-- [ ] Integration matrix against real databases
+- [x] Integration matrix against real databases (testcontainers)
 - [ ] v1.0 API stabilization

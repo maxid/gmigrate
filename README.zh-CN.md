@@ -120,6 +120,12 @@ MySQL 使用 `parseTime=true`；多语句文件加 `multiStatements=true`。
 ```bash
 go test ./...
 go build ./cmd/gmigrate
+
+# 通过 testcontainers 跑真实数据库（需要 Docker）
+go test -tags=integration ./...
 ```
+
+集成测试使用 `mysql:8.4.7`、`postgres:15-alpine`、
+`clickhouse/clickhouse-server:24.8-alpine`、`tdengine/tsdb:3.4.0.9`。
 
 MIT，见 [LICENSE](LICENSE)。
