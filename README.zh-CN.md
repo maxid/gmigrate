@@ -84,6 +84,7 @@ gmigrate -url 'postgres://...' -locations db/migrations validate
 gmigrate -url 'postgres://...' -baseline-version 20261031 baseline
 gmigrate -url 'postgres://...' -locations db/migrations repair
 gmigrate -url 'postgres://...' -clean-disabled=false clean
+gmigrate -url 'postgres://...' -locations db/migrations -dry-run migrate
 ```
 
 支持 `-placeholder key=value`（可重复）、`-table`、`-schema`、`-installed-by`、`-out-of-order`、`-ignore-missing`、`-baseline-on-migrate`。

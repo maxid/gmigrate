@@ -219,3 +219,15 @@ func TestCleanDisabled(t *testing.T) {
 		t.Fatalf("Clean = %v", err)
 	}
 }
+
+func TestDryRunDoesNotApply(t *testing.T) {
+	store := &memoryStore{}
+	engine, _ := NewEngine(store)
+	pending, err := engine.DryRun(context.Background(), []Migration{migration("1", "V1__init.sql", 1)})
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending = %+v, %v", pending, err)
+	}
+	if len(store.applied) != 0 {
+		t.Fatalf("dry run applied %+v", store.applied)
+	}
+}

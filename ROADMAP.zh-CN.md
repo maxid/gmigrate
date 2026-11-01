@@ -12,6 +12,7 @@
 - [x] 默认 schema / PostgreSQL search_path / MySQL USE
 - [x] 有序 schema 列表（MySQL/CH/TD 用第一个）
 - [x] 清理全部配置 schema
-- [ ] Undo 与 dry-run
+- [x] Dry-run 计划输出
+- [ ] Undo
 - [ ] 真实数据库集成矩阵
 - [ ] v1.0 API 稳定化

@@ -579,3 +579,50 @@ func sourceByKey(ms []Migration) map[string]Migration {
 	}
 	return out
 }
+
+// DryRun returns the migrations Up would apply, without executing or recording
+// anything. Callbacks are not run; callbacks may have side effects.
+func (e *Engine) DryRun(ctx context.Context, ms []Migration) ([]Migration, error) {
+	if err := e.store.Ensure(ctx); err != nil {
+		return nil, err
+	}
+	history, err := e.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.validate(history, ms); err != nil {
+		return nil, err
+	}
+	applied := map[string]History{}
+	baseline := ""
+	maxApplied := ""
+	for _, h := range history {
+		if h.Type == "BASELINE" {
+			baseline = h.Version
+			continue
+		}
+		applied[h.Key()] = h
+		if h.Version != "" && (maxApplied == "" || VersionCompare(h.Version, maxApplied) > 0) {
+			maxApplied = h.Version
+		}
+	}
+	var out []Migration
+	for _, m := range ms {
+		if h, ok := applied[m.Key()]; ok {
+			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
+				continue
+			}
+		}
+		if baseline != "" && m.Version != "" && VersionCompare(m.Version, baseline) <= 0 {
+			continue
+		}
+		if !e.outOfOrder && !m.Repeatable && maxApplied != "" && VersionCompare(m.Version, maxApplied) < 0 {
+			return out, fmt.Errorf("%w: %s is lower than applied %s", ErrOutOfOrder, m.Version, maxApplied)
+		}
+		out = append(out, m)
+		if !m.Repeatable && (maxApplied == "" || VersionCompare(m.Version, maxApplied) > 0) {
+			maxApplied = m.Version
+		}
+	}
+	return out, nil
+}

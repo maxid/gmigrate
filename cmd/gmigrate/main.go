@@ -26,6 +26,7 @@ type options struct {
 	ignoreMissing     bool
 	baselineOnMigrate bool
 	cleanDisabled     bool
+	dryRun            bool
 	placeholders      placeholderFlags
 }
 
@@ -64,6 +65,7 @@ func run(ctx context.Context, args []string) error {
 	fs.BoolVar(&opts.ignoreMissing, "ignore-missing", false, "ignore missing applied migrations")
 	fs.BoolVar(&opts.baselineOnMigrate, "baseline-on-migrate", false, "record baseline-version on an empty history")
 	fs.BoolVar(&opts.cleanDisabled, "clean-disabled", true, "disable the destructive clean command")
+	fs.BoolVar(&opts.dryRun, "dry-run", false, "for migrate: print pending migrations without applying them")
 	fs.Var(opts.placeholders, "placeholder", "placeholder key=value (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -103,6 +105,17 @@ func run(ctx context.Context, args []string) error {
 
 	switch command {
 	case "migrate", "up":
+		if opts.dryRun {
+			pending, err := engine.DryRun(ctx, ms)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("would apply %d migration(s)\n", len(pending))
+			for _, m := range pending {
+				fmt.Printf("  %s %s (%s)\n", m.Version, m.Description, m.Script)
+			}
+			return nil
+		}
 		done, err := engine.Migrate(ctx, ms)
 		if err != nil {
 			return err

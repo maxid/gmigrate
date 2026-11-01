@@ -10,6 +10,7 @@
 - [x] Default schema / PostgreSQL search_path / MySQL USE
 - [x] Ordered schema list (first schema drives MySQL/CH/TD)
 - [x] Clean all configured schemas
-- [ ] Undo migrations and dry-run
+- [x] Dry-run plan output
+- [ ] Undo migrations
 - [ ] Integration matrix against real databases
 - [ ] v1.0 API stabilization
