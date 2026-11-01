@@ -81,7 +81,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	callbacks, err := loadCallbacks(opts)
+	if err != nil {
+		return err
+	}
 	engine, err := gmigrate.New(store, gmigrate.Config{
+		Callbacks:         callbacks,
 		OutOfOrder:        opts.outOfOrder,
 		IgnoreMissing:     opts.ignoreMissing,
 		BaselineOnMigrate: opts.baselineOnMigrate,
@@ -159,6 +164,61 @@ func loadMigrations(opts options) ([]gmigrate.Migration, error) {
 	}
 	ms = append(ms, gmigrate.Registered()...)
 	return gmigrate.SortMigrations(ms), nil
+}
+
+func loadCallbacks(opts options) (gmigrate.Callbacks, error) {
+	var out gmigrate.Callbacks
+	for _, dir := range strings.Split(opts.locations, ",") {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		callbacks, err := gmigrate.LoadCallbacksDir(dir, gmigrate.WithPlaceholders(opts.placeholders))
+		if err != nil {
+			return gmigrate.Callbacks{}, err
+		}
+		mergeCallbacks(&out, callbacks)
+	}
+	return out, nil
+}
+
+func mergeCallbacks(dst *gmigrate.Callbacks, src gmigrate.Callbacks) {
+	if dst.BeforeMigrateSQL == nil {
+		dst.BeforeMigrateSQL = src.BeforeMigrateSQL
+	}
+	if dst.AfterMigrateSQL == nil {
+		dst.AfterMigrateSQL = src.AfterMigrateSQL
+	}
+	if dst.BeforeEachSQL == nil {
+		dst.BeforeEachSQL = src.BeforeEachSQL
+	}
+	if dst.AfterEachSQL == nil {
+		dst.AfterEachSQL = src.AfterEachSQL
+	}
+	if dst.BeforeValidateSQL == nil {
+		dst.BeforeValidateSQL = src.BeforeValidateSQL
+	}
+	if dst.AfterValidateSQL == nil {
+		dst.AfterValidateSQL = src.AfterValidateSQL
+	}
+	if dst.BeforeBaselineSQL == nil {
+		dst.BeforeBaselineSQL = src.BeforeBaselineSQL
+	}
+	if dst.AfterBaselineSQL == nil {
+		dst.AfterBaselineSQL = src.AfterBaselineSQL
+	}
+	if dst.BeforeRepairSQL == nil {
+		dst.BeforeRepairSQL = src.BeforeRepairSQL
+	}
+	if dst.AfterRepairSQL == nil {
+		dst.AfterRepairSQL = src.AfterRepairSQL
+	}
+	if dst.BeforeCleanSQL == nil {
+		dst.BeforeCleanSQL = src.BeforeCleanSQL
+	}
+	if dst.AfterCleanSQL == nil {
+		dst.AfterCleanSQL = src.AfterCleanSQL
+	}
 }
 
 func openStore(raw, table, installedBy string) (gmigrate.Store, error) {

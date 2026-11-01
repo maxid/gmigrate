@@ -12,28 +12,40 @@ const lockName = "gmigrate"
 // loaded by the CLI for the corresponding phases; the fields here are the Go
 // equivalent.
 type Callbacks struct {
-	BeforeMigrate  func(context.Context) error
-	AfterMigrate   func(context.Context) error
-	BeforeEach     func(context.Context, Migration) error
-	AfterEach      func(context.Context, Migration) error
-	BeforeValidate func(context.Context) error
-	AfterValidate  func(context.Context) error
-	BeforeBaseline func(context.Context) error
-	AfterBaseline  func(context.Context) error
-	BeforeRepair   func(context.Context) error
-	AfterRepair    func(context.Context) error
-	BeforeClean    func(context.Context) error
-	AfterClean     func(context.Context) error
+	BeforeMigrate     func(context.Context) error
+	BeforeMigrateSQL  []byte
+	AfterMigrate      func(context.Context) error
+	AfterMigrateSQL   []byte
+	BeforeEach        func(context.Context, Migration) error
+	BeforeEachSQL     []byte
+	AfterEach         func(context.Context, Migration) error
+	AfterEachSQL      []byte
+	BeforeValidate    func(context.Context) error
+	BeforeValidateSQL []byte
+	AfterValidate     func(context.Context) error
+	AfterValidateSQL  []byte
+	BeforeBaseline    func(context.Context) error
+	BeforeBaselineSQL []byte
+	AfterBaseline     func(context.Context) error
+	AfterBaselineSQL  []byte
+	BeforeRepair      func(context.Context) error
+	BeforeRepairSQL   []byte
+	AfterRepair       func(context.Context) error
+	AfterRepairSQL    []byte
+	BeforeClean       func(context.Context) error
+	BeforeCleanSQL    []byte
+	AfterClean        func(context.Context) error
+	AfterCleanSQL     []byte
 }
 
 // Config configures an Engine.
 type Config struct {
-	OutOfOrder       bool
-	IgnoreMissing    bool
+	OutOfOrder        bool
+	IgnoreMissing     bool
 	BaselineOnMigrate bool
-	BaselineVersion  string
-	CleanDisabled    bool
-	Callbacks        Callbacks
+	BaselineVersion   string
+	CleanDisabled     bool
+	Callbacks         Callbacks
 }
 
 // Engine validates and applies migrations against a Store.
@@ -118,6 +130,11 @@ func (e *Engine) Migrate(ctx context.Context, ms []Migration) ([]Migration, erro
 
 // Validate checks a source set against the history without changing it.
 func (e *Engine) Validate(ctx context.Context, ms []Migration) error {
+	if e.callbacks.BeforeValidateSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeValidateSQL)); err != nil {
+			return err
+		}
+	}
 	if e.callbacks.BeforeValidate != nil {
 		if err := e.callbacks.BeforeValidate(ctx); err != nil {
 			return err
@@ -135,6 +152,9 @@ func (e *Engine) Validate(ctx context.Context, ms []Migration) error {
 	}
 	if e.callbacks.AfterValidate != nil {
 		return e.callbacks.AfterValidate(ctx)
+	}
+	if e.callbacks.AfterValidateSQL != nil {
+		return e.store.Exec(ctx, string(e.callbacks.AfterValidateSQL))
 	}
 	return nil
 }
@@ -284,6 +304,11 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 	if err := e.validate(history, ms); err != nil {
 		return nil, err
 	}
+	if e.callbacks.BeforeMigrateSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeMigrateSQL)); err != nil {
+			return nil, err
+		}
+	}
 	if e.callbacks.BeforeMigrate != nil {
 		if err := e.callbacks.BeforeMigrate(ctx); err != nil {
 			return nil, err
@@ -317,6 +342,11 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 		if !e.outOfOrder && !m.Repeatable && maxApplied != "" && VersionCompare(m.Version, maxApplied) < 0 {
 			return done, fmt.Errorf("%w: %s is lower than applied %s", ErrOutOfOrder, m.Version, maxApplied)
 		}
+		if e.callbacks.BeforeEachSQL != nil {
+			if err := e.store.Exec(ctx, string(e.callbacks.BeforeEachSQL)); err != nil {
+				return done, err
+			}
+		}
 		if e.callbacks.BeforeEach != nil {
 			if err := e.callbacks.BeforeEach(ctx, m); err != nil {
 				return done, err
@@ -330,6 +360,11 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 				return done, err
 			}
 		}
+		if e.callbacks.AfterEachSQL != nil {
+			if err := e.store.Exec(ctx, string(e.callbacks.AfterEachSQL)); err != nil {
+				return done, err
+			}
+		}
 		done = append(done, m)
 		if !m.Repeatable && (maxApplied == "" || VersionCompare(m.Version, maxApplied) > 0) {
 			maxApplied = m.Version
@@ -337,6 +372,11 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 	}
 	if e.callbacks.AfterMigrate != nil {
 		if err := e.callbacks.AfterMigrate(ctx); err != nil {
+			return done, err
+		}
+	}
+	if e.callbacks.AfterMigrateSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.AfterMigrateSQL)); err != nil {
 			return done, err
 		}
 	}
@@ -348,6 +388,11 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 func (e *Engine) Baseline(ctx context.Context, version string) error {
 	if err := validateVersion(version); err != nil {
 		return err
+	}
+	if e.callbacks.BeforeBaselineSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeBaselineSQL)); err != nil {
+			return err
+		}
 	}
 	if e.callbacks.BeforeBaseline != nil {
 		if err := e.callbacks.BeforeBaseline(ctx); err != nil {
@@ -375,6 +420,9 @@ func (e *Engine) Baseline(ctx context.Context, version string) error {
 	if e.callbacks.AfterBaseline != nil {
 		return e.callbacks.AfterBaseline(ctx)
 	}
+	if e.callbacks.AfterBaselineSQL != nil {
+		return e.store.Exec(ctx, string(e.callbacks.AfterBaselineSQL))
+	}
 	return nil
 }
 
@@ -382,6 +430,11 @@ func (e *Engine) Baseline(ctx context.Context, version string) error {
 // provided source. A checksum mismatch is not silently accepted when no source
 // is supplied.
 func (e *Engine) Repair(ctx context.Context, ms ...Migration) error {
+	if e.callbacks.BeforeRepairSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeRepairSQL)); err != nil {
+			return err
+		}
+	}
 	if e.callbacks.BeforeRepair != nil {
 		if err := e.callbacks.BeforeRepair(ctx); err != nil {
 			return err
@@ -417,6 +470,9 @@ func (e *Engine) Repair(ctx context.Context, ms ...Migration) error {
 	if e.callbacks.AfterRepair != nil {
 		return e.callbacks.AfterRepair(ctx)
 	}
+	if e.callbacks.AfterRepairSQL != nil {
+		return e.store.Exec(ctx, string(e.callbacks.AfterRepairSQL))
+	}
 	return nil
 }
 
@@ -424,6 +480,11 @@ func (e *Engine) Repair(ctx context.Context, ms ...Migration) error {
 func (e *Engine) Clean(ctx context.Context) error {
 	if e.cleanDisabled {
 		return ErrCleanDisabled
+	}
+	if e.callbacks.BeforeCleanSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeCleanSQL)); err != nil {
+			return err
+		}
 	}
 	if e.callbacks.BeforeClean != nil {
 		if err := e.callbacks.BeforeClean(ctx); err != nil {
@@ -440,6 +501,9 @@ func (e *Engine) Clean(ctx context.Context) error {
 	}
 	if e.callbacks.AfterClean != nil {
 		return e.callbacks.AfterClean(ctx)
+	}
+	if e.callbacks.AfterCleanSQL != nil {
+		return e.store.Exec(ctx, string(e.callbacks.AfterCleanSQL))
 	}
 	return nil
 }

@@ -114,6 +114,11 @@ func (s *ClickHouseStore) Record(ctx context.Context, m Migration) error {
 	return err
 }
 
+func (s *ClickHouseStore) Exec(ctx context.Context, sql string) error {
+	_, err := s.db.ExecContext(ctx, sql)
+	return err
+}
+
 func (s *ClickHouseStore) DeleteFailed(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.table+` DELETE WHERE success = FALSE`)
 	return err

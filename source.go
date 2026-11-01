@@ -64,6 +64,9 @@ func LoadFS(fsys fs.FS, opts ...SourceOption) ([]Migration, error) {
 		}
 		script := path.Clean(p)
 		name := path.Base(script)
+		if isCallbackFile(name) {
+			return nil
+		}
 		version, description := "", ""
 		repeatable := false
 		if m := versionedRE.FindStringSubmatch(name); m != nil {

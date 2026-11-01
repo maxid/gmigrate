@@ -151,6 +151,15 @@ func (s *TDengineStore) Record(ctx context.Context, m Migration) error {
 	return err
 }
 
+func (s *TDengineStore) Exec(ctx context.Context, sql string) error {
+	for _, stmt := range splitStatements(sql) {
+		if _, err := s.exec(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *TDengineStore) DeleteFailed(context.Context) error {
 	return fmt.Errorf("%w: repair is not supported on TDengine", ErrUnsupported)
 }

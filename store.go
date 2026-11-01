@@ -41,6 +41,8 @@ type Store interface {
 	DeleteFailed(ctx context.Context) error
 	// UpdateChecksum rewrites one applied row's checksum (repair).
 	UpdateChecksum(ctx context.Context, script string, checksum int32) error
+	// Exec runs a callback SQL script outside the migration history.
+	Exec(ctx context.Context, sql string) error
 	// Clean drops the tables owned by this schema. It is destructive and must
 	// only be called after an explicit opt-in.
 	Clean(ctx context.Context) error
@@ -292,6 +294,11 @@ func (s *sqlStore) Record(ctx context.Context, m Migration) error {
 	query := `INSERT INTO ` + s.quote(s.table) + ` (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success) VALUES (` +
 		s.placeholder(1) + `, ` + s.placeholder(2) + `, ` + s.placeholder(3) + `, ` + s.placeholder(4) + `, ` + s.placeholder(5) + `, NULL, ` + s.placeholder(6) + `, 0, TRUE)`
 	_, err = s.db.ExecContext(ctx, query, rank, m.Version, m.Description, m.migrationType(), m.Script, s.installedBy)
+	return err
+}
+
+func (s *sqlStore) Exec(ctx context.Context, sql string) error {
+	_, err := s.db.ExecContext(ctx, sql)
 	return err
 }
 

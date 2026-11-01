@@ -57,6 +57,7 @@ func (s *memoryStore) UpdateChecksum(_ context.Context, script string, checksum 
 	return nil
 }
 func (s *memoryStore) Clean(context.Context) error                  { s.history = nil; return nil }
+func (s *memoryStore) Exec(context.Context, string) error           { return nil }
 func (s *memoryStore) Lock(context.Context, string) (func(), error) { return func() {}, nil }
 func (s *memoryStore) Close() error                                 { return nil }
 
