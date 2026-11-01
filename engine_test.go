@@ -284,3 +284,16 @@ func TestUndoRequiresSource(t *testing.T) {
 		t.Fatal("undo without U source succeeded")
 	}
 }
+
+func TestCherryPickAppliesOnlyTheRequestedVersion(t *testing.T) {
+	store := &memoryStore{}
+	engine, _ := New(store, Config{CherryPick: "2"})
+	ms := []Migration{migration("1", "V1__one.sql", 1), migration("2", "V2__two.sql", 2)}
+	done, err := engine.Up(context.Background(), ms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(done) != 1 || done[0].Version != "2" {
+		t.Fatalf("cherry-pick = %+v", done)
+	}
+}

@@ -91,7 +91,7 @@ gmigrate -url 'postgres://...' -clean-disabled=false clean
 gmigrate -url 'postgres://...' -locations db/migrations -dry-run migrate
 ```
 
-Use `-placeholder key=value` (repeatable), `-table`, `-schema`, `-installed-by`, `-out-of-order`, `-ignore-missing`, `-baseline-on-migrate`.
+Use `-placeholder key=value` (repeatable), `-table`, `-schema`, `-installed-by`, `-out-of-order`, `-ignore-missing`, `-baseline-on-migrate`, `-cherry-pick <version>`.
 
 `-schema` selects one default schema; `-schemas a,b,c` sets an ordered list (first is the default). PostgreSQL runs migrations with the full `search_path`; MySQL uses the first database via `USE`. The history table lives in the first schema.
 
@@ -112,7 +112,7 @@ For MySQL use `parseTime=true` and `multiStatements=true` when a migration file 
 
 - History columns: `installed_rank`, `version`, `description`, `type`, `script`, `checksum`, `installed_by`, `installed_on`, `execution_time`, `success`.
 - Checksum: Flyway's CRC32 over lines without line endings.
-- Ordered schema lists are supported (PostgreSQL `search_path`; MySQL/ClickHouse/TDengine use the first). Clean drops tables in every configured schema. Undo and dry-run are implemented; cherry-pick is not yet.
+- Ordered schema lists are supported (PostgreSQL `search_path`; MySQL/ClickHouse/TDengine use the first). Clean drops tables in every configured schema. Undo, dry-run and cherry-pick (`-cherry-pick`) are implemented.
 - ClickHouse/TDengine history is append-only where the engine cannot update rows; the latest `installed_rank` wins for repeatable migrations.
 
 ## Development

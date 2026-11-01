@@ -91,7 +91,7 @@ gmigrate -url 'postgres://...' -clean-disabled=false clean
 gmigrate -url 'postgres://...' -locations db/migrations -dry-run migrate
 ```
 
-支持 `-placeholder key=value`（可重复）、`-table`、`-schema`、`-installed-by`、`-out-of-order`、`-ignore-missing`、`-baseline-on-migrate`。
+支持 `-placeholder key=value`（可重复）、`-table`、`-schema`、`-installed-by`、`-out-of-order`、`-ignore-missing`、`-baseline-on-migrate`、`-cherry-pick <version>`。
 
 `-schema` 指定一个默认 schema；`-schemas a,b,c` 设置有序列表（第一个是默认）。PostgreSQL 用完整 `search_path` 执行迁移；MySQL 用第一个 database 执行 `USE`。历史表位于第一个 schema。
 
@@ -112,7 +112,7 @@ MySQL 使用 `parseTime=true`；多语句文件加 `multiStatements=true`。
 
 - 历史列：`installed_rank`、`version`、`description`、`type`、`script`、`checksum`、`installed_by`、`installed_on`、`execution_time`、`success`。
 - Checksum：Flyway 的行级 CRC32。
-- 已支持有序 schema 列表（PostgreSQL 全量 `search_path`；MySQL/ClickHouse/TDengine 使用第一个）。clean 会清理所有配置 schema。Undo 与 dry-run 已实现；cherry-pick 尚未实现。
+- 已支持有序 schema 列表（PostgreSQL 全量 `search_path`；MySQL/ClickHouse/TDengine 使用第一个）。clean 会清理所有配置 schema。Undo、dry-run 与 cherry-pick（`-cherry-pick`）已实现。
 - ClickHouse/TDengine 在引擎不能更新行时使用 append-only 历史；repeatable 以最大 `installed_rank` 为准。
 
 ## 开发

@@ -23,6 +23,7 @@ type options struct {
 	installedBy       string
 	baselineVersion   string
 	target            string
+	cherryPick        string
 	outOfOrder        bool
 	ignoreMissing     bool
 	baselineOnMigrate bool
@@ -63,6 +64,7 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&opts.installedBy, "installed-by", "gmigrate", "installed_by value")
 	fs.StringVar(&opts.baselineVersion, "baseline-version", "", "baseline version")
 	fs.StringVar(&opts.target, "target", "", "undo target: undo versions greater than this (empty: latest only)")
+	fs.StringVar(&opts.cherryPick, "cherry-pick", "", "apply only this pending version")
 	fs.BoolVar(&opts.outOfOrder, "out-of-order", false, "allow out-of-order migrations")
 	fs.BoolVar(&opts.ignoreMissing, "ignore-missing", false, "ignore missing applied migrations")
 	fs.BoolVar(&opts.baselineOnMigrate, "baseline-on-migrate", false, "record baseline-version on an empty history")
@@ -100,6 +102,7 @@ func run(ctx context.Context, args []string) error {
 		BaselineOnMigrate: opts.baselineOnMigrate,
 		BaselineVersion:   opts.baselineVersion,
 		CleanDisabled:     opts.cleanDisabled,
+		CherryPick:        opts.cherryPick,
 	})
 	if err != nil {
 		return err

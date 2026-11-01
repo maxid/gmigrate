@@ -49,6 +49,7 @@ type Config struct {
 	BaselineOnMigrate bool
 	BaselineVersion   string
 	CleanDisabled     bool
+	CherryPick        string
 	Callbacks         Callbacks
 }
 
@@ -60,6 +61,7 @@ type Engine struct {
 	baselineOnMigrate bool
 	baselineVersion   string
 	cleanDisabled     bool
+	cherryPick        string
 	callbacks         Callbacks
 }
 
@@ -97,6 +99,11 @@ func WithCallbacks(callbacks Callbacks) EngineOption {
 	return func(e *Engine) { e.callbacks = callbacks }
 }
 
+// WithCherryPick applies only the named pending version.
+func WithCherryPick(version string) EngineOption {
+	return func(e *Engine) { e.cherryPick = version }
+}
+
 // NewEngine creates an engine backed by store.
 func NewEngine(store Store, opts ...EngineOption) (*Engine, error) {
 	if store == nil {
@@ -116,6 +123,7 @@ func New(store Store, cfg Config) (*Engine, error) {
 		WithIgnoreMissing(cfg.IgnoreMissing),
 		WithCleanDisabled(cfg.CleanDisabled),
 		WithCallbacks(cfg.Callbacks),
+		WithCherryPick(cfg.CherryPick),
 	)
 	if err != nil {
 		return nil, err
@@ -266,6 +274,9 @@ func (e *Engine) Status(ctx context.Context, ms []Migration) (Status, error) {
 		}
 	}
 	for _, m := range forwardOnly(ms) {
+		if e.cherryPick != "" && m.Version != e.cherryPick {
+			continue
+		}
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue
@@ -335,6 +346,9 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 
 	var done []Migration
 	for _, m := range forwardOnly(ms) {
+		if e.cherryPick != "" && m.Version != e.cherryPick {
+			continue
+		}
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue
@@ -698,6 +712,9 @@ func (e *Engine) DryRun(ctx context.Context, ms []Migration) ([]Migration, error
 	}
 	var out []Migration
 	for _, m := range forwardOnly(ms) {
+		if e.cherryPick != "" && m.Version != e.cherryPick {
+			continue
+		}
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue
