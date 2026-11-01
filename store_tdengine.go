@@ -40,8 +40,12 @@ func OpenTDengine(dsn string, opts ...Option) (Store, error) {
 	if !identifierRE.MatchString(cfg.table) {
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
-	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
-		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	schema := ""
+	if len(cfg.schemas) > 0 {
+		schema = cfg.schemas[0]
+		if !identifierRE.MatchString(schema) {
+			return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, schema)
+		}
 	}
 	s := &TDengineStore{
 		baseURL: u.Scheme + "://" + u.Host,
@@ -49,7 +53,7 @@ func OpenTDengine(dsn string, opts ...Option) (Store, error) {
 		client:  &http.Client{Timeout: 15 * time.Second},
 		table:   cfg.table,
 		by:      cfg.installedBy,
-		schema:  cfg.schema,
+		schema:  schema,
 	}
 	if s.schema != "" {
 		s.db = s.schema

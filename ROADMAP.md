@@ -8,7 +8,8 @@
 - [x] ClickHouse and TDengine stores
 - [x] `gmigrate` CLI
 - [x] Default schema / PostgreSQL search_path / MySQL USE
-- [ ] Ordered multi-schema list
+- [x] Ordered schema list (first schema drives MySQL/CH/TD)
+- [x] Clean all configured schemas
 - [ ] Undo migrations and dry-run
 - [ ] Integration matrix against real databases
 - [ ] v1.0 API stabilization

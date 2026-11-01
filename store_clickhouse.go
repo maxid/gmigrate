@@ -37,14 +37,18 @@ func OpenClickHouse(dsn string, opts ...Option) (Store, error) {
 	if !identifierRE.MatchString(cfg.table) {
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
-	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
-		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	schema := ""
+	if len(cfg.schemas) > 0 {
+		schema = cfg.schemas[0]
+		if !identifierRE.MatchString(schema) {
+			return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, schema)
+		}
 	}
 	db, err := sql.Open("clickhouse", dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &ClickHouseStore{db: db, table: cfg.table, installedBy: cfg.installedBy, schema: cfg.schema}, nil
+	return &ClickHouseStore{db: db, table: cfg.table, installedBy: cfg.installedBy, schema: schema}, nil
 }
 
 func (s *ClickHouseStore) Close() error { return s.db.Close() }

@@ -58,7 +58,7 @@ type Option func(*storeConfig)
 type storeConfig struct {
 	table       string
 	installedBy string
-	schema      string
+	schemas     []string
 }
 
 func newStoreConfig(opts ...Option) storeConfig {
@@ -72,11 +72,29 @@ func newStoreConfig(opts ...Option) storeConfig {
 	return cfg
 }
 
-// WithSchema sets the default schema/database. The history table is qualified
-// with it, and migrations run with it as the current schema (PostgreSQL
-// search_path, MySQL USE).
+// WithSchema sets a single default schema/database.
 func WithSchema(name string) Option {
-	return func(c *storeConfig) { c.schema = name }
+	return func(c *storeConfig) {
+		if name == "" {
+			c.schemas = nil
+			return
+		}
+		c.schemas = []string{name}
+	}
+}
+
+// WithSchemas sets an ordered schema list. The first entry is the default
+// schema (history table location and MySQL database); PostgreSQL uses the whole
+// list as search_path.
+func WithSchemas(names ...string) Option {
+	return func(c *storeConfig) {
+		c.schemas = nil
+		for _, name := range names {
+			if name = strings.TrimSpace(name); name != "" {
+				c.schemas = append(c.schemas, name)
+			}
+		}
+	}
 }
 
 // WithTable overrides the history table name.
@@ -133,11 +151,13 @@ func newStore(db *sql.DB, dialect Dialect, opts ...Option) (*sqlStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("%w: invalid history table %q", ErrInvalidConfig, cfg.table)
 	}
-	if cfg.schema != "" && !identifierRE.MatchString(cfg.schema) {
-		_ = db.Close()
-		return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, cfg.schema)
+	for _, schema := range cfg.schemas {
+		if !identifierRE.MatchString(schema) {
+			_ = db.Close()
+			return nil, fmt.Errorf("%w: invalid schema %q", ErrInvalidConfig, schema)
+		}
 	}
-	return &sqlStore{db: db, dialect: dialect, table: cfg.table, installedBy: cfg.installedBy, schema: cfg.schema}, nil
+	return &sqlStore{db: db, dialect: dialect, table: cfg.table, installedBy: cfg.installedBy, schemas: cfg.schemas}, nil
 }
 
 var identifierRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -147,24 +167,21 @@ type sqlStore struct {
 	dialect     Dialect
 	table       string
 	installedBy string
-	schema      string
+	schemas     []string
+}
+
+func (s *sqlStore) defaultSchema() string {
+	if len(s.schemas) == 0 {
+		return ""
+	}
+	return s.schemas[0]
 }
 
 func (s *sqlStore) tableName() string {
-	if s.schema == "" {
+	if len(s.schemas) == 0 {
 		return s.quote(s.table)
 	}
-	return s.quote(s.schema) + "." + s.quote(s.table)
-}
-
-func (s *sqlStore) schemaName() string {
-	if s.schema != "" {
-		return s.schema
-	}
-	if s.dialect == DialectMySQL {
-		return "DATABASE()"
-	}
-	return "current_schema()"
+	return s.quote(s.schemas[0]) + "." + s.quote(s.table)
 }
 
 func (s *sqlStore) Close() error { return s.db.Close() }
@@ -184,12 +201,12 @@ func (s *sqlStore) placeholder(n int) string {
 }
 
 func (s *sqlStore) Ensure(ctx context.Context) error {
-	if s.schema != "" {
+	for _, schema := range s.schemas {
 		var create string
 		if s.dialect == DialectMySQL {
-			create = `CREATE DATABASE IF NOT EXISTS ` + s.quote(s.schema)
+			create = `CREATE DATABASE IF NOT EXISTS ` + s.quote(schema)
 		} else {
-			create = `CREATE SCHEMA IF NOT EXISTS ` + s.quote(s.schema)
+			create = `CREATE SCHEMA IF NOT EXISTS ` + s.quote(schema)
 		}
 		if _, err := s.db.ExecContext(ctx, create); err != nil {
 			return fmt.Errorf("migrate: ensure schema: %w", err)
@@ -358,14 +375,18 @@ func (s *sqlStore) Exec(ctx context.Context, sql string) error {
 func (s *sqlStore) useSchema(ctx context.Context, conn interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }) error {
-	if s.schema == "" {
+	if len(s.schemas) == 0 {
 		return nil
 	}
 	if s.dialect == DialectMySQL {
-		_, err := conn.ExecContext(ctx, `USE `+s.quote(s.schema))
+		_, err := conn.ExecContext(ctx, `USE `+s.quote(s.schemas[0]))
 		return err
 	}
-	_, err := conn.ExecContext(ctx, `SET search_path TO `+s.quote(s.schema))
+	quoted := make([]string, 0, len(s.schemas))
+	for _, schema := range s.schemas {
+		quoted = append(quoted, s.quote(schema))
+	}
+	_, err := conn.ExecContext(ctx, `SET search_path TO `+strings.Join(quoted, ", "))
 	return err
 }
 
@@ -381,23 +402,34 @@ func (s *sqlStore) UpdateChecksum(ctx context.Context, script string, checksum i
 }
 
 func (s *sqlStore) Clean(ctx context.Context) error {
+	schemas := s.schemas
+	if len(schemas) == 0 {
+		schemas = []string{""}
+	}
+	for _, schema := range schemas {
+		if err := s.cleanSchema(ctx, schema); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sqlStore) cleanSchema(ctx context.Context, schema string) error {
 	query := `SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'`
 	dropSuffix := ""
 	if s.dialect == DialectPostgres {
 		query = `SELECT tablename FROM pg_tables WHERE schemaname = current_schema()`
 		dropSuffix = " CASCADE"
 	}
-	if s.schema != "" {
+	var rows *sql.Rows
+	var err error
+	if schema != "" {
 		if s.dialect == DialectMySQL {
 			query = `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'`
 		} else {
 			query = `SELECT tablename FROM pg_tables WHERE schemaname = $1`
 		}
-	}
-	var rows *sql.Rows
-	var err error
-	if s.schema != "" {
-		rows, err = s.db.QueryContext(ctx, query, s.schema)
+		rows, err = s.db.QueryContext(ctx, query, schema)
 	} else {
 		rows, err = s.db.QueryContext(ctx, query)
 	}
@@ -421,8 +453,8 @@ func (s *sqlStore) Clean(ctx context.Context) error {
 	}
 	for _, name := range names {
 		qualified := s.quote(name)
-		if s.schema != "" {
-			qualified = s.quote(s.schema) + "." + qualified
+		if schema != "" {
+			qualified = s.quote(schema) + "." + qualified
 		}
 		if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS `+qualified+dropSuffix); err != nil {
 			return err

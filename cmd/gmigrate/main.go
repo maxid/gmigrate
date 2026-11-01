@@ -19,6 +19,7 @@ type options struct {
 	locations         string
 	table             string
 	schema            string
+	schemas           string
 	installedBy       string
 	baselineVersion   string
 	outOfOrder        bool
@@ -56,6 +57,7 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&opts.locations, "locations", "db/migrations", "comma-separated migration directories")
 	fs.StringVar(&opts.table, "table", gmigrate.DefaultHistoryTable, "history table")
 	fs.StringVar(&opts.schema, "schema", "", "default schema/database")
+	fs.StringVar(&opts.schemas, "schemas", "", "comma-separated ordered schemas (first is default)")
 	fs.StringVar(&opts.installedBy, "installed-by", "gmigrate", "installed_by value")
 	fs.StringVar(&opts.baselineVersion, "baseline-version", "", "baseline version")
 	fs.BoolVar(&opts.outOfOrder, "out-of-order", false, "allow out-of-order migrations")
@@ -73,7 +75,7 @@ func run(ctx context.Context, args []string) error {
 	if opts.url == "" {
 		return fmt.Errorf("-url is required")
 	}
-	store, err := openStore(opts.url, opts.table, opts.installedBy, opts.schema)
+	store, err := openStore(opts.url, opts.table, opts.installedBy, opts.schema, opts.schemas)
 	if err != nil {
 		return err
 	}
@@ -223,7 +225,7 @@ func mergeCallbacks(dst *gmigrate.Callbacks, src gmigrate.Callbacks) {
 	}
 }
 
-func openStore(raw, table, installedBy, schema string) (gmigrate.Store, error) {
+func openStore(raw, table, installedBy, schema, schemas string) (gmigrate.Store, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" {
 		return nil, fmt.Errorf("invalid database URL")
@@ -231,6 +233,9 @@ func openStore(raw, table, installedBy, schema string) (gmigrate.Store, error) {
 	opts := []gmigrate.Option{gmigrate.WithTable(table), gmigrate.WithInstalledBy(installedBy)}
 	if schema != "" {
 		opts = append(opts, gmigrate.WithSchema(schema))
+	}
+	if schemas != "" {
+		opts = append(opts, gmigrate.WithSchemas(strings.Split(schemas, ",")...))
 	}
 	switch u.Scheme {
 	case "mysql":

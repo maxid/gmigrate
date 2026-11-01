@@ -10,7 +10,8 @@
 - [x] ClickHouse 与 TDengine store
 - [x] `gmigrate` CLI
 - [x] 默认 schema / PostgreSQL search_path / MySQL USE
-- [ ] 有序多 schema 列表
+- [x] 有序 schema 列表（MySQL/CH/TD 用第一个）
+- [x] 清理全部配置 schema
 - [ ] Undo 与 dry-run
 - [ ] 真实数据库集成矩阵
 - [ ] v1.0 API 稳定化
