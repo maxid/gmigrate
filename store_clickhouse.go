@@ -139,6 +139,18 @@ func (s *ClickHouseStore) Exec(ctx context.Context, sql string) error {
 	return err
 }
 
+func (s *ClickHouseStore) Undo(ctx context.Context, m Migration) error {
+	if m.Go != nil {
+		if err := m.Go(ctx, s.db); err != nil {
+			return err
+		}
+	} else if _, err := s.db.ExecContext(ctx, string(m.SQL)); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.tableName()+` DELETE WHERE version = ? AND type <> 'BASELINE'`, m.Version)
+	return err
+}
+
 func (s *ClickHouseStore) DeleteFailed(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `ALTER TABLE `+s.tableName()+` DELETE WHERE success = FALSE`)
 	return err

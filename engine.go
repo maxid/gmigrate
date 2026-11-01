@@ -36,6 +36,10 @@ type Callbacks struct {
 	BeforeCleanSQL    []byte
 	AfterClean        func(context.Context) error
 	AfterCleanSQL     []byte
+	BeforeUndo        func(context.Context) error
+	BeforeUndoSQL     []byte
+	AfterUndo         func(context.Context) error
+	AfterUndoSQL      []byte
 }
 
 // Config configures an Engine.
@@ -147,7 +151,7 @@ func (e *Engine) Validate(ctx context.Context, ms []Migration) error {
 	if err != nil {
 		return err
 	}
-	if err := e.validate(history, ms); err != nil {
+	if err := e.validate(history, forwardOnly(ms)); err != nil {
 		return err
 	}
 	if e.callbacks.AfterValidate != nil {
@@ -187,7 +191,7 @@ func (e *Engine) Info(ctx context.Context, ms []Migration) ([]Info, error) {
 		applied[h.Key()] = h
 	}
 	var out []Info
-	for _, m := range ms {
+	for _, m := range forwardOnly(ms) {
 		info := Info{Version: m.Version, Description: m.Description, Script: m.Script, Type: m.migrationType(), Repeatable: m.Repeatable}
 		if h, ok := applied[m.Key()]; ok {
 			info.Applied = true
@@ -261,7 +265,7 @@ func (e *Engine) Status(ctx context.Context, ms []Migration) (Status, error) {
 			status.Applied++
 		}
 	}
-	for _, m := range ms {
+	for _, m := range forwardOnly(ms) {
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue
@@ -301,7 +305,7 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 			return nil, err
 		}
 	}
-	if err := e.validate(history, ms); err != nil {
+	if err := e.validate(history, forwardOnly(ms)); err != nil {
 		return nil, err
 	}
 	if e.callbacks.BeforeMigrateSQL != nil {
@@ -330,7 +334,7 @@ func (e *Engine) Up(ctx context.Context, ms []Migration) ([]Migration, error) {
 	}
 
 	var done []Migration
-	for _, m := range ms {
+	for _, m := range forwardOnly(ms) {
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue
@@ -572,10 +576,96 @@ func (e *Engine) validate(history []History, ms []Migration) error {
 	return nil
 }
 
+// Undo reverses applied versioned migrations. With an empty target it undoes
+// the latest applied version; with a target it undoes every applied version
+// greater than target, newest first. The original history row is deleted, so a
+// later Up can reapply the version.
+func (e *Engine) Undo(ctx context.Context, ms []Migration, target string) ([]Migration, error) {
+	undoSource := map[string]Migration{}
+	for _, m := range ms {
+		if m.Undo {
+			undoSource[m.Version] = m
+		}
+	}
+	release, err := e.store.Lock(ctx, lockName)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if err := e.store.Ensure(ctx); err != nil {
+		return nil, err
+	}
+	history, err := e.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var versions []string
+	seen := map[string]bool{}
+	for _, h := range history {
+		if !h.Success || h.Type == "BASELINE" || h.Version == "" || seen[h.Version] {
+			continue
+		}
+		if target != "" && VersionCompare(h.Version, target) <= 0 {
+			continue
+		}
+		seen[h.Version] = true
+		versions = append(versions, h.Version)
+	}
+	sort.Slice(versions, func(i, j int) bool { return VersionCompare(versions[i], versions[j]) > 0 })
+	if target == "" && len(versions) > 1 {
+		versions = versions[:1]
+	}
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("migrate: no applied version to undo")
+	}
+	if e.callbacks.BeforeUndoSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.BeforeUndoSQL)); err != nil {
+			return nil, err
+		}
+	}
+	if e.callbacks.BeforeUndo != nil {
+		if err := e.callbacks.BeforeUndo(ctx); err != nil {
+			return nil, err
+		}
+	}
+	var done []Migration
+	for _, version := range versions {
+		m, ok := undoSource[version]
+		if !ok {
+			return done, fmt.Errorf("migrate: no U migration for %s", version)
+		}
+		if err := e.store.Undo(ctx, m); err != nil {
+			return done, fmt.Errorf("%s: %w", m.Script, err)
+		}
+		done = append(done, m)
+	}
+	if e.callbacks.AfterUndo != nil {
+		if err := e.callbacks.AfterUndo(ctx); err != nil {
+			return done, err
+		}
+	}
+	if e.callbacks.AfterUndoSQL != nil {
+		if err := e.store.Exec(ctx, string(e.callbacks.AfterUndoSQL)); err != nil {
+			return done, err
+		}
+	}
+	return done, nil
+}
+
 func sourceByKey(ms []Migration) map[string]Migration {
 	out := make(map[string]Migration, len(ms))
-	for _, m := range ms {
+	for _, m := range forwardOnly(ms) {
 		out[m.Key()] = m
+	}
+	return out
+}
+
+func forwardOnly(ms []Migration) []Migration {
+	out := make([]Migration, 0, len(ms))
+	for _, m := range ms {
+		if !m.Undo {
+			out = append(out, m)
+		}
 	}
 	return out
 }
@@ -590,7 +680,7 @@ func (e *Engine) DryRun(ctx context.Context, ms []Migration) ([]Migration, error
 	if err != nil {
 		return nil, err
 	}
-	if err := e.validate(history, ms); err != nil {
+	if err := e.validate(history, forwardOnly(ms)); err != nil {
 		return nil, err
 	}
 	applied := map[string]History{}
@@ -607,7 +697,7 @@ func (e *Engine) DryRun(ctx context.Context, ms []Migration) ([]Migration, error
 		}
 	}
 	var out []Migration
-	for _, m := range ms {
+	for _, m := range forwardOnly(ms) {
 		if h, ok := applied[m.Key()]; ok {
 			if !m.Repeatable || (h.Checksum != nil && *h.Checksum == m.Checksum) {
 				continue

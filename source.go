@@ -42,6 +42,7 @@ func LoadDir(dir string, opts ...SourceOption) ([]Migration, error) {
 var (
 	versionedRE   = regexp.MustCompile(`^V([0-9][0-9.]*)__(.+)\.sql$`)
 	repeatableRE  = regexp.MustCompile(`^R__(.+)\.sql$`)
+	undoRE        = regexp.MustCompile(`^U([0-9][0-9.]*)__(.+)\.sql$`)
 	placeholderRE = regexp.MustCompile(`\$\{([A-Za-z0-9_.-]+)\}`)
 )
 
@@ -68,7 +69,7 @@ func LoadFS(fsys fs.FS, opts ...SourceOption) ([]Migration, error) {
 			return nil
 		}
 		version, description := "", ""
-		repeatable := false
+		repeatable, undo := false, false
 		if m := versionedRE.FindStringSubmatch(name); m != nil {
 			version, description = m[1], m[2]
 			if err := validateVersion(version); err != nil {
@@ -77,6 +78,12 @@ func LoadFS(fsys fs.FS, opts ...SourceOption) ([]Migration, error) {
 		} else if m := repeatableRE.FindStringSubmatch(name); m != nil {
 			description = m[1]
 			repeatable = true
+		} else if m := undoRE.FindStringSubmatch(name); m != nil {
+			version, description = m[1], m[2]
+			undo = true
+			if err := validateVersion(version); err != nil {
+				return fmt.Errorf("migration %s: %w", script, err)
+			}
 		} else {
 			return fmt.Errorf("migration %s: invalid name (want V<version>__<description>.sql or R__<description>.sql)", script)
 		}
@@ -96,18 +103,22 @@ func LoadFS(fsys fs.FS, opts ...SourceOption) ([]Migration, error) {
 			Checksum:    Checksum(data),
 			SQL:         []byte(executable),
 			Repeatable:  repeatable,
+			Undo:        undo,
 		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool {
+	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Repeatable != out[j].Repeatable {
 			return !out[i].Repeatable
 		}
 		if out[i].Repeatable {
 			return out[i].Script < out[j].Script
+		}
+		if out[i].Undo != out[j].Undo {
+			return !out[i].Undo
 		}
 		if c := VersionCompare(out[i].Version, out[j].Version); c != 0 {
 			return c < 0
@@ -135,6 +146,9 @@ func SortMigrations(ms []Migration) []Migration {
 		}
 		if out[i].Repeatable {
 			return out[i].Script < out[j].Script
+		}
+		if out[i].Undo != out[j].Undo {
+			return !out[i].Undo
 		}
 		if c := VersionCompare(out[i].Version, out[j].Version); c != 0 {
 			return c < 0

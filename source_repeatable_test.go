@@ -32,3 +32,17 @@ func TestLoadFSRejectsMissingPlaceholder(t *testing.T) {
 		t.Fatal("missing placeholder accepted")
 	}
 }
+
+func TestLoadFSUndo(t *testing.T) {
+	fsys := fstest.MapFS{
+		"db/V1__init.sql": {Data: []byte("CREATE TABLE t (id INT);")},
+		"db/U1__init.sql": {Data: []byte("DROP TABLE t;")},
+	}
+	ms, err := LoadFS(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) != 2 || ms[0].Version != "1" || ms[1].Version != "1" || !ms[1].Undo {
+		t.Fatalf("migrations = %+v", ms)
+	}
+}

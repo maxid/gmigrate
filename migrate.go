@@ -53,6 +53,8 @@ type Migration struct {
 	Go GoFunc
 	// Repeatable migrations run again when their checksum changes.
 	Repeatable bool
+	// Undo marks a U<version> migration used by Engine.Undo.
+	Undo bool
 }
 
 // History is one row of flyway_schema_history.
@@ -83,6 +85,9 @@ func (m Migration) migrationType() string {
 	if m.Type != "" {
 		return m.Type
 	}
+	if m.Undo {
+		return "UNDO_SQL"
+	}
 	if m.Go != nil {
 		return "GO"
 	}
@@ -92,6 +97,9 @@ func (m Migration) migrationType() string {
 // Key identifies a migration in the source and history. Versioned migrations
 // use their version; repeatable migrations use their script path.
 func (m Migration) Key() string {
+	if m.Undo {
+		return "U:" + m.Version
+	}
 	if m.Repeatable || m.Version == "" {
 		return "R:" + m.Script
 	}

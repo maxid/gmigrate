@@ -56,8 +56,19 @@ func (s *memoryStore) UpdateChecksum(_ context.Context, script string, checksum 
 	}
 	return nil
 }
-func (s *memoryStore) Clean(context.Context) error                  { s.history = nil; return nil }
-func (s *memoryStore) Exec(context.Context, string) error           { return nil }
+func (s *memoryStore) Clean(context.Context) error        { s.history = nil; return nil }
+func (s *memoryStore) Exec(context.Context, string) error { return nil }
+func (s *memoryStore) Undo(_ context.Context, m Migration) error {
+	s.applied = append(s.applied, m)
+	var kept []History
+	for _, h := range s.history {
+		if h.Version != m.Version || h.Type == "BASELINE" {
+			kept = append(kept, h)
+		}
+	}
+	s.history = kept
+	return nil
+}
 func (s *memoryStore) Lock(context.Context, string) (func(), error) { return func() {}, nil }
 func (s *memoryStore) Close() error                                 { return nil }
 
@@ -229,5 +240,47 @@ func TestDryRunDoesNotApply(t *testing.T) {
 	}
 	if len(store.applied) != 0 {
 		t.Fatalf("dry run applied %+v", store.applied)
+	}
+}
+
+func undo(version, script string) Migration {
+	return Migration{Version: version, Description: "undo", Script: script, Type: "UNDO_SQL", Undo: true, Checksum: 1}
+}
+
+func TestUndoLatestAndTarget(t *testing.T) {
+	store := &memoryStore{}
+	engine, _ := NewEngine(store)
+	ms := []Migration{
+		migration("1", "V1__one.sql", 1), migration("2", "V2__two.sql", 2),
+		undo("1", "U1__one.sql"), undo("2", "U2__two.sql"),
+	}
+	if _, err := engine.Up(context.Background(), ms); err != nil {
+		t.Fatal(err)
+	}
+	done, err := engine.Undo(context.Background(), ms, "1")
+	if err != nil || len(done) != 1 || done[0].Version != "2" {
+		t.Fatalf("undo >1 = %+v, %v", done, err)
+	}
+	done, err = engine.Undo(context.Background(), ms, "")
+	if err != nil || len(done) != 1 || done[0].Version != "1" {
+		t.Fatalf("undo latest = %+v, %v", done, err)
+	}
+	if len(store.history) != 0 {
+		t.Fatalf("history remains: %+v", store.history)
+	}
+	if _, err := engine.Undo(context.Background(), ms, ""); err == nil {
+		t.Fatal("undo on empty history succeeded")
+	}
+}
+
+func TestUndoRequiresSource(t *testing.T) {
+	store := &memoryStore{}
+	engine, _ := NewEngine(store)
+	ms := []Migration{migration("1", "V1__one.sql", 1)}
+	if _, err := engine.Up(context.Background(), ms); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Undo(context.Background(), ms, ""); err == nil {
+		t.Fatal("undo without U source succeeded")
 	}
 }

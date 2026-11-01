@@ -13,6 +13,6 @@
 - [x] 有序 schema 列表（MySQL/CH/TD 用第一个）
 - [x] 清理全部配置 schema
 - [x] Dry-run 计划输出
-- [ ] Undo
+- [x] Undo（U 文件与 Go Down）
 - [ ] 真实数据库集成矩阵
 - [ ] v1.0 API 稳定化

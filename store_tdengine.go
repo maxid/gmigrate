@@ -174,6 +174,10 @@ func (s *TDengineStore) Exec(ctx context.Context, sql string) error {
 	return nil
 }
 
+func (s *TDengineStore) Undo(context.Context, Migration) error {
+	return fmt.Errorf("%w: undo is not supported on TDengine", ErrUnsupported)
+}
+
 func (s *TDengineStore) DeleteFailed(context.Context) error {
 	return fmt.Errorf("%w: repair is not supported on TDengine", ErrUnsupported)
 }

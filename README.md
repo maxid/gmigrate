@@ -21,10 +21,12 @@ db/migrations/
   V1__init.sql
   V2__add_task_index.sql
   R__task_view.sql
+  U2__add_task_index.sql
 ```
 
 - `V<version>__<description>.sql`: versioned; runs once, in version order.
 - `R__<description>.sql`: repeatable; runs after versioned migrations, and again only when its checksum changes.
+- `U<version>__<description>.sql`: undo for a versioned migration; `gmigrate undo` runs it and removes the original history row. Go migrations use the optional `Down` function.
 - Placeholders use `${key}` and are replaced **after** the checksum is calculated, so changing a placeholder value does not change history checksums.
 
 ## Library
@@ -83,6 +85,8 @@ gmigrate -url 'mysql://user:pass@tcp(127.0.0.1:3306)/app?parseTime=true' \
 gmigrate -url 'postgres://...' -locations db/migrations validate
 gmigrate -url 'postgres://...' -baseline-version 20261031 baseline
 gmigrate -url 'postgres://...' -locations db/migrations repair
+gmigrate -url 'postgres://...' -locations db/migrations undo              # latest
+gmigrate -url 'postgres://...' -locations db/migrations -target 2.0 undo  # undo versions > 2.0
 gmigrate -url 'postgres://...' -clean-disabled=false clean
 gmigrate -url 'postgres://...' -locations db/migrations -dry-run migrate
 ```
@@ -108,7 +112,7 @@ For MySQL use `parseTime=true` and `multiStatements=true` when a migration file 
 
 - History columns: `installed_rank`, `version`, `description`, `type`, `script`, `checksum`, `installed_by`, `installed_on`, `execution_time`, `success`.
 - Checksum: Flyway's CRC32 over lines without line endings.
-- Ordered schema lists are supported (PostgreSQL `search_path`; MySQL/ClickHouse/TDengine use the first). Clean drops tables in every configured schema; Undo, cherry-pick and dry-run are not yet implemented.
+- Ordered schema lists are supported (PostgreSQL `search_path`; MySQL/ClickHouse/TDengine use the first). Clean drops tables in every configured schema. Undo and dry-run are implemented; cherry-pick is not yet.
 - ClickHouse/TDengine history is append-only where the engine cannot update rows; the latest `installed_rank` wins for repeatable migrations.
 
 ## Development

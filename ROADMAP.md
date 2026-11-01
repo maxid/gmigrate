@@ -11,6 +11,6 @@
 - [x] Ordered schema list (first schema drives MySQL/CH/TD)
 - [x] Clean all configured schemas
 - [x] Dry-run plan output
-- [ ] Undo migrations
+- [x] Undo migrations (U files and Go Down)
 - [ ] Integration matrix against real databases
 - [ ] v1.0 API stabilization

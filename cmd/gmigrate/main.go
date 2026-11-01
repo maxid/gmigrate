@@ -22,6 +22,7 @@ type options struct {
 	schemas           string
 	installedBy       string
 	baselineVersion   string
+	target            string
 	outOfOrder        bool
 	ignoreMissing     bool
 	baselineOnMigrate bool
@@ -61,6 +62,7 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&opts.schemas, "schemas", "", "comma-separated ordered schemas (first is default)")
 	fs.StringVar(&opts.installedBy, "installed-by", "gmigrate", "installed_by value")
 	fs.StringVar(&opts.baselineVersion, "baseline-version", "", "baseline version")
+	fs.StringVar(&opts.target, "target", "", "undo target: undo versions greater than this (empty: latest only)")
 	fs.BoolVar(&opts.outOfOrder, "out-of-order", false, "allow out-of-order migrations")
 	fs.BoolVar(&opts.ignoreMissing, "ignore-missing", false, "ignore missing applied migrations")
 	fs.BoolVar(&opts.baselineOnMigrate, "baseline-on-migrate", false, "record baseline-version on an empty history")
@@ -71,7 +73,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return fmt.Errorf("command required: migrate|info|validate|baseline|repair|clean")
+		return fmt.Errorf("command required: migrate|info|validate|baseline|repair|undo|clean")
 	}
 	command := fs.Arg(0)
 	if opts.url == "" {
@@ -155,6 +157,15 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Println("repair complete")
+	case "undo":
+		done, err := engine.Undo(ctx, ms, opts.target)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("undid %d migration(s)\n", len(done))
+		for _, m := range done {
+			fmt.Printf("  %s %s\n", m.Version, m.Description)
+		}
 	case "clean":
 		if err := engine.Clean(ctx); err != nil {
 			return err

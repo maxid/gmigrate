@@ -21,10 +21,12 @@ db/migrations/
   V1__init.sql
   V2__add_task_index.sql
   R__task_view.sql
+  U2__add_task_index.sql
 ```
 
 - `V<version>__<description>.sql`：versioned，按版本顺序只跑一次。
 - `R__<description>.sql`：repeatable，在 versioned 之后执行，checksum 变化才重跑。
+- `U<version>__<description>.sql`：versioned 的 undo；`gmigrate undo` 执行后删除原历史行。Go 迁移用可选的 `Down` 函数。
 - Placeholder 使用 `${key}`，在 checksum 计算**之后**、执行之前替换，因此改 placeholder 值不会改变历史 checksum。
 
 ## 库
@@ -83,6 +85,8 @@ gmigrate -url 'mysql://user:pass@tcp(127.0.0.1:3306)/app?parseTime=true' \
 gmigrate -url 'postgres://...' -locations db/migrations validate
 gmigrate -url 'postgres://...' -baseline-version 20261031 baseline
 gmigrate -url 'postgres://...' -locations db/migrations repair
+gmigrate -url 'postgres://...' -locations db/migrations undo              # 最新一个
+gmigrate -url 'postgres://...' -locations db/migrations -target 2.0 undo  # 撤销 >2.0
 gmigrate -url 'postgres://...' -clean-disabled=false clean
 gmigrate -url 'postgres://...' -locations db/migrations -dry-run migrate
 ```
@@ -108,7 +112,7 @@ MySQL 使用 `parseTime=true`；多语句文件加 `multiStatements=true`。
 
 - 历史列：`installed_rank`、`version`、`description`、`type`、`script`、`checksum`、`installed_by`、`installed_on`、`execution_time`、`success`。
 - Checksum：Flyway 的行级 CRC32。
-- 已支持有序 schema 列表（PostgreSQL 全量 `search_path`；MySQL/ClickHouse/TDengine 使用第一个）。clean 会清理所有配置 schema；Undo、cherry-pick、dry-run 尚未实现。
+- 已支持有序 schema 列表（PostgreSQL 全量 `search_path`；MySQL/ClickHouse/TDengine 使用第一个）。clean 会清理所有配置 schema。Undo 与 dry-run 已实现；cherry-pick 尚未实现。
 - ClickHouse/TDengine 在引擎不能更新行时使用 append-only 历史；repeatable 以最大 `installed_rank` 为准。
 
 ## 开发

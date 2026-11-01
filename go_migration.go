@@ -18,6 +18,7 @@ type GoMigration struct {
 	Version     string
 	Description string
 	Up          GoFunc
+	Down        GoFunc
 	Checksum    *int32
 }
 
@@ -85,6 +86,20 @@ func (r *Registry) Register(m GoMigration) error {
 	}
 	r.byKey[key] = migration
 	r.order = append(r.order, key)
+	if m.Down != nil {
+		downChecksum := int32(crc32.ChecksumIEEE([]byte(m.Version + "\x00undo\x00" + runtime.FuncForPC(reflect.ValueOf(m.Down).Pointer()).Name())))
+		undo := Migration{
+			Version:     m.Version,
+			Description: m.Description,
+			Script:      "go:undo:" + m.Description,
+			Type:        "UNDO_SQL",
+			Checksum:    downChecksum,
+			Go:          m.Down,
+			Undo:        true,
+		}
+		r.byKey[undo.Key()] = undo
+		r.order = append(r.order, undo.Key())
+	}
 	return nil
 }
 

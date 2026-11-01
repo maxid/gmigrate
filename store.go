@@ -43,6 +43,8 @@ type Store interface {
 	UpdateChecksum(ctx context.Context, script string, checksum int32) error
 	// Exec runs a callback SQL script outside the migration history.
 	Exec(ctx context.Context, sql string) error
+	// Undo executes an undo migration and removes the original versioned row.
+	Undo(ctx context.Context, m Migration) error
 	// Clean drops the tables owned by this schema. It is destructive and must
 	// only be called after an explicit opt-in.
 	Clean(ctx context.Context) error
@@ -388,6 +390,31 @@ func (s *sqlStore) useSchema(ctx context.Context, conn interface {
 	}
 	_, err := conn.ExecContext(ctx, `SET search_path TO `+strings.Join(quoted, ", "))
 	return err
+}
+
+func (s *sqlStore) Undo(ctx context.Context, m Migration) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := s.useSchema(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if m.Go != nil {
+		if err := m.Go(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	} else if _, err := tx.ExecContext(ctx, string(m.SQL)); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM `+s.tableName()+` WHERE version = `+s.placeholder(1)+` AND type <> 'BASELINE'`, m.Version); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *sqlStore) DeleteFailed(ctx context.Context) error {

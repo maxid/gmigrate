@@ -14,6 +14,7 @@ var callbackFiles = map[string]string{
 	"beforeBaseline.sql": "BeforeBaselineSQL", "afterBaseline.sql": "AfterBaselineSQL",
 	"beforeRepair.sql": "BeforeRepairSQL", "afterRepair.sql": "AfterRepairSQL",
 	"beforeClean.sql": "BeforeCleanSQL", "afterClean.sql": "AfterCleanSQL",
+	"beforeUndo.sql": "BeforeUndoSQL", "afterUndo.sql": "AfterUndoSQL",
 }
 
 // LoadCallbacksDir loads Flyway-style callback SQL files from a directory.
