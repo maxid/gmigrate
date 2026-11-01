@@ -105,7 +105,7 @@ For MySQL use `parseTime=true` and `multiStatements=true` when a migration file 
 
 - History columns: `installed_rank`, `version`, `description`, `type`, `script`, `checksum`, `installed_by`, `installed_on`, `execution_time`, `success`.
 - Checksum: Flyway's CRC32 over lines without line endings.
-- Not yet: Undo migrations, cherry-pick, dry-run, full multi-schema/search_path semantics, Java/JDBC migrations.
+- Not yet: Undo migrations, cherry-pick, dry-run, full multi-schema/search_path semantics, JVM/JDBC migrations.
 - ClickHouse/TDengine history is append-only where the engine cannot update rows; the latest `installed_rank` wins for repeatable migrations.
 
 ## Development

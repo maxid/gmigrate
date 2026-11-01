@@ -105,7 +105,7 @@ MySQL 使用 `parseTime=true`；多语句文件加 `multiStatements=true`。
 
 - 历史列：`installed_rank`、`version`、`description`、`type`、`script`、`checksum`、`installed_by`、`installed_on`、`execution_time`、`success`。
 - Checksum：Flyway 的行级 CRC32。
-- 尚未支持：Undo、cherry-pick、dry-run、完整多 schema/search_path、Java/JDBC 迁移。
+- 尚未支持：Undo、cherry-pick、dry-run、完整多 schema/search_path、JVM/JDBC 迁移。
 - ClickHouse/TDengine 在引擎不能更新行时使用 append-only 历史；repeatable 以最大 `installed_rank` 为准。
 
 ## 开发
