@@ -1,2 +1,13 @@
 /gmigrate
 /bin/
+
+# build outputs — nothing compiled belongs in the repository (AGENTS.md §6)
+/dist/
+*.exe
+*.test
+*.out
+*.so
+*.dylib
+*.a
+*.prof
+coverage.*
